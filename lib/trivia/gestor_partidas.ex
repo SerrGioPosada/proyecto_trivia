@@ -1,0 +1,2 @@
+defmodule GestorPartidas do
+end

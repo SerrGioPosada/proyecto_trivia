@@ -1,0 +1,2 @@
+defmodule SupervisorPartidas do
+end

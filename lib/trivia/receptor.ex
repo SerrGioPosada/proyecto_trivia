@@ -1,0 +1,2 @@
+defmodule Receptor do
+end
