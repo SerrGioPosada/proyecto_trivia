@@ -10,9 +10,25 @@ defmodule Trivia.Servidor do
   end
 
   def handle_call(peticion, _desde, estado) do
-    case peticion do
+    ase peticion do
+      {:crear_partida, usuario, tema, preguntas, tiempo} ->
+        respuesta =
+          GenServer.call(
+            Trivia.GestorPartidas,
+            {:crear_partida, usuario, tema, preguntas, tiempo}
+          )
+
+        {:reply, respuesta, estado}
+
       _ ->
         {:reply, {:error, :peticion_desconocida}, estado}
     end
+  end
+
+  def crear_partida(usuario, tema, preguntas, tiempo) do
+    GenServer.call(
+      __MODULE__,
+      {:crear_partida, usuario, tema, preguntas, tiempo}
+    )
   end
 end
