@@ -1,2 +1,2 @@
-defmodule SupervisorPartidas do
+defmodule Trivia.SupervisorPartidas do
 end

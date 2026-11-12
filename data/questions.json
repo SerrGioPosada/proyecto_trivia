@@ -1,1 +1,14 @@
-{}
+[
+    {
+        "tema": "ciencia",
+        "nivel": "basico",
+        "enunciado": "¿Cuál es el planeta más cercano al Sol?",
+        "opciones": [
+            "Venus",
+            "Mercurio",
+            "Marte",
+            "Tierra"
+        ],
+        "respuesta": "Mercurio"
+    }
+]

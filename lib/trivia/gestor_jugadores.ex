@@ -1,2 +1,2 @@
-defmodule GestorJugadores do
+defmodule Trivia.GestorJugadores do
 end

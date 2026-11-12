@@ -10,7 +10,7 @@ defmodule Trivia.Servidor do
   end
 
   def handle_call(peticion, _desde, estado) do
-    ase peticion do
+    case peticion do
       {:crear_partida, usuario, tema, preguntas, tiempo} ->
         respuesta =
           GenServer.call(

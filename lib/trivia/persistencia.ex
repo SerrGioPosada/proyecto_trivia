@@ -87,7 +87,7 @@ defmodule Trivia.Persistencia do
       |> Stream.map(&String.trim/1)
       |> Stream.reject(&(&1 == ""))
     else
-      Stream.empty()
+      []
     end
   end
 end

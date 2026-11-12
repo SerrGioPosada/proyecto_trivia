@@ -1,2 +1,2 @@
-defmodule Partida do
+defmodule Trivia.Partida do
 end

@@ -1,34 +1,23 @@
 defmodule Trivia.Nivel do
-  def puntaje_por_tema(usuario, tema) do
-    lineas = Trivia.Persistencia.stream_historial()
-
+  def puntaje_por_tema(lineas, usuario, tema) do
     Enum.reduce(lineas, 0, fn linea, acumulado ->
       case Jason.decode(linea) do
-        {:ok, resultado} ->
-          if Map.get(resultado, "tema") == tema do
-            puntajes = Map.get(resultado, "puntajes", %{})
-            puntos = Map.get(puntajes, usuario, 0)
-            acumulado + puntos
-          else
-            acumulado
-          end
+        {:ok, %{"tema" => ^tema, "puntajes" => puntajes}} ->
+          acumulado + Map.get(puntajes, usuario, 0)
 
-        # Aquí trabajaremos con el mapa
-
-        {:error, _} ->
-          # Ignoramos la línea incorrecta
+        _ ->
           acumulado
       end
     end)
   end
 
-  def calcular_nivel(usuario, tema) do
-    puntaje = puntaje_por_tema(usuario, tema)
+  def nivel_por_puntaje(puntaje) when puntaje < 60, do: :basico
+  def nivel_por_puntaje(puntaje) when puntaje < 180, do: :intermedio
+  def nivel_por_puntaje(_puntaje), do: :avanzado
 
-    cond do
-      puntaje < 60 -> :basico
-      puntaje < 180 -> :intermedio
-      true -> :avanzado
-    end
+  def calcular_nivel(lineas, usuario, tema) do
+    lineas
+    |> puntaje_por_tema(usuario, tema)
+    |> nivel_por_puntaje()
   end
 end

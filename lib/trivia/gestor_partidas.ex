@@ -11,19 +11,35 @@ defmodule Trivia.GestorPartidas do
 
   def handle_call(peticion, _desde, estado) do
     case peticion do
-      # agregar operaciones
       {:crear_partida, usuario, tema, preguntas, tiempo} ->
-        nivel = Trivia.Nivel.calcular_nivel(usuario, tema)
-        id = generar_id()
+        tema = String.downcase(String.trim(tema))
 
-        case Trivia.Structs.Partida.nuevo(id, usuario, tema, nivel, preguntas, tiempo) do
-          {:ok, partida} ->
-            nuevo_estado = Map.put(estado, id, partida)
-            {:reply, {:ok, id, nivel}, nuevo_estado}
+        if usuario_en_partida?(estado, usuario) do
+          {:reply, {:error, "ya esta en una partida"}, estado}
+        else
+          nivel =
+            Trivia.Persistencia.stream_historial()
+            |> Trivia.Nivel.calcular_nivel(usuario, tema)
 
-          {:error, razon} ->
-            {:reply, {:error, razon}, estado}
-            # se devuele el error
+          {n_bas, n_inter, n_av} =
+            Trivia.BancoPreguntas.calcular_reparto(nivel, preguntas)
+
+          requeridas_por_nivel = [
+            basico: n_bas,
+            intermedio: n_inter,
+            avanzado: n_av
+          ]
+
+          id = generar_id(estado)
+
+          with {:ok, :suficientes_preguntas} <-
+                 Trivia.BancoPreguntas.validar_disponibilidad_tema(tema, requeridas_por_nivel),
+               {:ok, partida} <-
+                 Trivia.Structs.Partida.nuevo(id, usuario, tema, nivel, preguntas, tiempo) do
+            {:reply, {:ok, id, nivel}, Map.put(estado, id, partida)}
+          else
+            {:error, razon} -> {:reply, {:error, razon}, estado}
+          end
         end
     end
   end
@@ -36,5 +52,11 @@ defmodule Trivia.GestorPartidas do
     else
       id
     end
+  end
+
+  def usuario_en_partida?(estado, usuario) do
+    Enum.any?(estado, fn {_id, partida} ->
+      usuario in partida.jugadores
+    end)
   end
 end
