@@ -12,10 +12,11 @@ defmodule ProyectoTrivia.MixProject do
   end
 
   def application do
-    [
-      mod: {Trivia.Application, []}
-    ]
-  end
+  [
+    extra_applications: [:logger],
+    mod: {Trivia.Application, []}
+  ]
+end
 
   defp deps do
     [

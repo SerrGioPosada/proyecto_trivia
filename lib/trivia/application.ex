@@ -1,3 +1,4 @@
+
 defmodule Trivia.Application do
   use Application
 
@@ -5,6 +6,7 @@ defmodule Trivia.Application do
     hijos = [
       Trivia.BancoPreguntas,
       Trivia.GestorPartidas,
+      Trivia.SupervisorPartidas,
       Trivia.Servidor
     ]
 
