@@ -29,8 +29,8 @@ defmodule Trivia.GestorPartidas do
         creador: usuario,
         tema: tema,
         nivel: nivel,
-        total: preguntas,
-        tiempo: tiempo,
+        total_preguntas: preguntas,
+        tiempo_pregunta: tiempo,
         cliente_pid: cliente_pid
       ]
 
@@ -47,9 +47,9 @@ defmodule Trivia.GestorPartidas do
     end
   end
 
-  # La partida reporta su id y PID cada vez que arranca.
+  # La partida reporta su id y PID cada vez que arranca (:actualizar_pid_partida).
   # Si el gestor ya tenía ese id con otro PID, la partida se reinició.
-  def handle_cast({:partida_iniciada, id, pid}, estado) do
+  def handle_cast({:actualizar_pid_partida, id, pid}, estado) do
     info = Map.get(estado, id)
 
     cond do
@@ -66,15 +66,35 @@ defmodule Trivia.GestorPartidas do
   end
 
   # La partida terminó: se guarda el resultado y el jugador queda libre.
-  def handle_cast({:partida_terminada, id, resultado}, estado) do
+  def handle_cast({:partida_terminada, partida, resultado}, estado) do
     Trivia.Persistencia.registrar_resultado(linea_historial(resultado))
-    {:noreply, Map.delete(estado, id)}
+    {:noreply, Map.delete(estado, partida.id)}
+  end
+
+  # El cliente se cerró con la partida en curso: se registra con los puntajes hasta ese momento.
+  def handle_cast({:partida_abandonada, partida}, estado) do
+    ranking = Enum.sort_by(partida.puntajes, fn {_jugador, puntos} -> -puntos end)
+    {_, maximo} = hd(ranking)
+    ganadores = for {jugador, puntos} <- ranking, puntos == maximo, do: jugador
+
+    resultado = %{
+      id: partida.id,
+      tema: partida.tema,
+      nivel: partida.nivel,
+      ranking: ranking,
+      ganadores: ganadores
+    }
+
+    Trivia.Persistencia.registrar_resultado(linea_historial(resultado))
+    {:noreply, Map.delete(estado, partida.id)}
   end
 
   # El creador abandonó antes de iniciar: no se registra nada.
   def handle_cast({:partida_cancelada, id}, estado) do
     {:noreply, Map.delete(estado, id)}
   end
+
+  def handle_cast(_otro_aviso, estado), do: {:noreply, estado}
 
   @doc "Línea de results.log: JSON con fecha, id, tema, nivel, ganador(es) y puntajes"
   def linea_historial(resultado) do
