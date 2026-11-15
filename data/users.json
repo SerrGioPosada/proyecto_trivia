@@ -1,1 +1,14 @@
-{}
+[
+  {
+    "clave": "1234",
+    "usuario": "sergio"
+  },
+  {
+    "clave": "5678",
+    "usuario": "maria"
+  },
+  {
+    "clave": "1234",
+    "usuario": "pedro"
+  }
+]
