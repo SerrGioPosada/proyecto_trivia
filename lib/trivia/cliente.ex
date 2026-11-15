@@ -1,2 +1,2 @@
-defmodule Cliente do
+defmodule Trivia.Cliente do
 end

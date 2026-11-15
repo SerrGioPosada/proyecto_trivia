@@ -1,2 +1,2 @@
-defmodule Bot do
+defmodule Trivia.Bot do
 end

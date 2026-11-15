@@ -1,2 +1,2 @@
-defmodule Receptor do
+defmodule Trivia.Receptor do
 end
