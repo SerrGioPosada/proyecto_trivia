@@ -51,7 +51,7 @@ defmodule Trivia.Structs.Pregunta do
   defp validar_opciones(_),
     do: {:error, "La pregunta debe contener exactamente 4 opciones de respuesta"}
 
-  defp validar_respuesta(respuesta, opciones) do
+  defp validar_respuesta(respuesta, _opciones) do
     resp_limpia = String.upcase(to_string(respuesta))
 
     if resp_limpia in ["A", "B", "C", "D"] do
