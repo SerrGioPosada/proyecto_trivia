@@ -45,7 +45,7 @@ defmodule Trivia.BotTest do
     partida_falsa = spawn(fn -> Process.sleep(:infinity) end)
 
     {:ok, bot} =
-      Bot.iniciar(nombre: "bot_1", dificultad: :facil, partida_pid: partida_falsa)
+      Bot.start_link(nombre: "bot_1", dificultad: :facil, partida_pid: partida_falsa)
 
     ref = Process.monitor(bot)
     Process.exit(partida_falsa, :kill)

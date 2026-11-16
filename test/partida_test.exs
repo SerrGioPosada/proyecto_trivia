@@ -47,12 +47,6 @@ defmodule Trivia.PartidaTest do
     )
   end
 
-  defp bot_falso do
-    pid = spawn(fn -> Process.sleep(:infinity) end)
-    on_exit(fn -> Process.exit(pid, :kill) end)
-    pid
-  end
-
   test "una partida nueva queda en espera con su creador" do
     {:ok, pid} = start_supervised({Partida, opciones()})
     partida = Partida.consultar(pid)
@@ -61,44 +55,52 @@ defmodule Trivia.PartidaTest do
     assert partida.jugadores == ["ana"]
   end
 
-  test "agregar_bot registra al bot con puntaje inicial 0" do
+  test "agregar_bot crea al bot con nombre bot_N y puntaje inicial 0" do
     {:ok, pid} = start_supervised({Partida, opciones()})
 
-    assert :ok = Partida.agregar_bot(pid, "bot_1", bot_falso())
+    assert {:ok, "bot_1"} = Partida.agregar_bot(pid, "facil")
+    assert {:ok, "bot_2"} = Partida.agregar_bot(pid, "dificil")
 
     partida = Partida.consultar(pid)
-    assert partida.jugadores == ["ana", "bot_1"]
+    assert partida.jugadores == ["ana", "bot_1", "bot_2"]
     assert partida.puntajes["bot_1"] == 0
+    assert partida.puntajes["bot_2"] == 0
   end
 
-  test "agregar_bot rechaza nombres sin prefijo, pids invalidos y duplicados" do
+  test "agregar_bot rechaza una dificultad invalida" do
     {:ok, pid} = start_supervised({Partida, opciones()})
 
-    assert {:error, "El nombre del bot no es válido"} =
-             Partida.agregar_bot(pid, "pedro", bot_falso())
-
-    assert {:error, "El PID del bot no es válido"} = Partida.agregar_bot(pid, "bot_1", :no_pid)
-
-    assert :ok = Partida.agregar_bot(pid, "bot_1", bot_falso())
-
-    assert {:error, "El bot ya está registrado"} =
-             Partida.agregar_bot(pid, "bot_1", bot_falso())
+    assert {:error, "La dificultad debe ser facil o dificil"} = Partida.agregar_bot(pid, "medio")
+    assert Partida.consultar(pid).jugadores == ["ana"]
   end
 
   test "la partida admite como maximo 4 jugadores" do
     {:ok, pid} = start_supervised({Partida, opciones()})
 
-    for n <- 1..3, do: assert(:ok = Partida.agregar_bot(pid, "bot_#{n}", bot_falso()))
+    for _ <- 1..3, do: assert({:ok, _} = Partida.agregar_bot(pid, "facil"))
 
-    assert {:error, "La partida ya tiene el máximo de jugadores"} =
-             Partida.agregar_bot(pid, "bot_4", bot_falso())
+    assert {:error, "add_bot con la partida llena"} = Partida.agregar_bot(pid, "facil")
   end
 
-  test "iniciar exige al menos 3 jugadores" do
+  test "iniciar exige al menos dos bots" do
     {:ok, pid} = start_supervised({Partida, opciones()})
-    :ok = Partida.agregar_bot(pid, "bot_1", bot_falso())
+    {:ok, _} = Partida.agregar_bot(pid, "facil")
 
-    assert {:error, "Se necesitan al menos 3 jugadores"} = Partida.iniciar(pid)
+    assert {:error, "start_game con menos de dos bots en la partida"} = Partida.iniciar(pid)
+  end
+
+  test "los bots mueren junto con su partida" do
+    opts = opciones()
+    {:ok, pid} = start_supervised({Partida, opts})
+    {:ok, _} = Partida.agregar_bot(pid, "facil")
+
+    bots = :sys.get_state(pid).bots_pid |> Map.values()
+    assert length(bots) == 1
+    assert Enum.all?(bots, &Process.alive?/1)
+    refs = for bot <- bots, do: Process.monitor(bot)
+
+    stop_supervised!({Partida, opts[:id]})
+    for ref <- refs, do: assert_receive({:DOWN, ^ref, :process, _, _}, 1_000)
   end
 
   test "no se puede responder si la partida no esta en curso" do

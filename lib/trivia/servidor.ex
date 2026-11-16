@@ -1,58 +1,68 @@
 defmodule Trivia.Servidor do
   use GenServer
 
-  alias Trivia.{GestorJugadores, GestorPartidas}
-
   def start_link(_opciones) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
   def init(estado_inicial) do
+    Trivia.Persistencia.inicializar_almacenamiento()
+    # Asegurar que GestorJugadores y GestorPartidas estén corriendo
     {:ok, estado_inicial}
   end
 
-  # JUGADORES
+  def handle_call(peticion, _desde, estado) do
+    case peticion do
+      {:connect, usuario, clave, cliente_pid} ->
+        respuesta = Trivia.GestorJugadores.conectar(usuario, clave, cliente_pid)
+        {:reply, respuesta, estado}
 
-  def handle_call({:connect, usuario, clave, cliente_pid}, _desde, estado) do
-    {:reply, GestorJugadores.conectar(usuario, clave, cliente_pid), estado}
-  end
+      {:disconnect, usuario} ->
+        # Sección 6.5: desconectarse con una partida abierta la termina.
+        GenServer.call(Trivia.GestorPartidas, {:abandonar_usuario, usuario})
+        respuesta = Trivia.GestorJugadores.desconectar(usuario)
+        {:reply, respuesta, estado}
 
-  def handle_call({:disconnect, usuario}, _desde, estado) do
-    {:reply, GestorJugadores.desconectar(usuario), estado}
-  end
+      {:score, usuario} ->
+        respuesta = Trivia.GestorJugadores.consultar_score(usuario)
+        {:reply, respuesta, estado}
 
-  def handle_call({:score, usuario}, _desde, estado) do
-    {:reply, GestorJugadores.consultar_score(usuario), estado}
-  end
+      {:ranking, tema} ->
+        respuesta = Trivia.GestorJugadores.consultar_ranking(tema)
+        {:reply, respuesta, estado}
 
-  def handle_call({:ranking, tema}, _desde, estado) do
-    {:reply, GestorJugadores.consultar_ranking(tema), estado}
-  end
+      {:crear_partida, usuario, tema, preguntas, tiempo, cliente_pid} ->
+        respuesta =
+          GenServer.call(
+            Trivia.GestorPartidas,
+            {:crear_partida, usuario, tema, preguntas, tiempo, cliente_pid}
+          )
 
-  # PARTIDAS
+        {:reply, respuesta, estado}
 
-  def handle_call({:crear_partida, usuario, tema, preguntas, tiempo, cliente_pid}, _desde, estado) do
-    respuesta = GestorPartidas.crear_partida(usuario, tema, preguntas, tiempo, cliente_pid)
-    {:reply, respuesta, estado}
-  end
+      {:add_bot, id_partida, dificultad} ->
+        respuesta = GenServer.call(Trivia.GestorPartidas, {:add_bot, id_partida, dificultad})
+        {:reply, respuesta, estado}
 
-  def handle_call({:add_bot, id_partida, dificultad}, _desde, estado) do
-    {:reply, GestorPartidas.agregar_bot(id_partida, dificultad), estado}
-  end
+      {:start_game, id_partida} ->
+        respuesta = GenServer.call(Trivia.GestorPartidas, {:start_game, id_partida})
+        {:reply, respuesta, estado}
 
-  def handle_call({:start_game, id_partida}, _desde, estado) do
-    {:reply, GestorPartidas.iniciar_partida(id_partida), estado}
-  end
+      {:responder, id_partida, usuario, respuesta_letra} ->
+        resultado =
+          GenServer.call(
+            Trivia.GestorPartidas,
+            {:responder, id_partida, usuario, respuesta_letra}
+          )
 
-  def handle_call({:responder, id_partida, usuario, letra}, _desde, estado) do
-    {:reply, GestorPartidas.responder(id_partida, usuario, letra), estado}
-  end
+        {:reply, resultado, estado}
 
-  def handle_call({:leave_game, id_partida, usuario}, _desde, estado) do
-    {:reply, GestorPartidas.abandonar_partida(id_partida, usuario), estado}
-  end
+      {:leave_game, id_partida, usuario} ->
+        respuesta = GenServer.call(Trivia.GestorPartidas, {:leave_game, id_partida, usuario})
+        {:reply, respuesta, estado}
 
-  def handle_call(_peticion, _desde, estado) do
-    {:reply, {:error, :peticion_desconocida}, estado}
+      _ ->
+        {:reply, {:error, :peticion_desconocida}, estado}
+    end
   end
 end

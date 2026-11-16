@@ -2,3 +2,4 @@
 {"fecha":"2026-11-15T21:57:14.964136Z","ganador":["bot_2"],"id":"P-95622137","nivel":"basico","puntajes":{"bot_1":5,"bot_2":54,"pedro":1},"tema":"ciencia"}
 {"fecha":"2026-11-15T21:59:14.984777Z","ganador":["bot_2"],"id":"P-366487957","nivel":"basico","puntajes":{"bot_1":0,"bot_2":67,"sergio":7},"tema":"geografia"}
 {"fecha":"2026-11-16T01:26:11.573068Z","ganador":["bot_2"],"id":"P-613843858","nivel":"basico","puntajes":{"bot_1":2,"bot_2":41,"pedro":0},"tema":"historia"}
+{"fecha":"2026-11-16T02:16:15.714267Z","ganador":["pedro"],"id":"P-704364603","nivel":"basico","puntajes":{"bot_1":-5,"bot_2":-5,"pedro":13},"tema":"historia"}

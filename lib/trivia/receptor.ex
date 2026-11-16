@@ -40,9 +40,15 @@ defmodule Trivia.Receptor do
 
   def handle_info({:partida_reiniciada, id}, state) do
     IO.puts(
-      "\n La partida #{id} falló y se reinició sin su progreso. Agrega los bots y ejecuta start_game para jugar de nuevo."
+      "\n⚠️ La partida #{id} falló y se reinició sin su progreso. Agrega los bots y ejecuta start_game para jugar de nuevo."
     )
 
+    IO.write("\nComando > ")
+    {:noreply, state}
+  end
+
+  def handle_info({:partida_cancelada, id}, state) do
+    IO.puts("\nLa partida #{id} fue cancelada.")
     IO.write("\nComando > ")
     {:noreply, state}
   end
@@ -52,12 +58,14 @@ defmodule Trivia.Receptor do
       "\n═══ Fin de la partida #{resultado.id} (#{resultado.tema}, nivel #{resultado.nivel}) ═══"
     )
 
-    IO.puts(String.pad_trailing("#    Jugador", 12) <> "Puntaje")
+    IO.puts(String.pad_trailing("#    Jugador", 16) <> "Puntaje")
 
     resultado.ranking
     |> Enum.with_index(1)
     |> Enum.each(fn {{jugador, puntos}, idx} ->
-      IO.puts("#{idx}    #{String.pad_trailing(to_string(jugador), 10)} #{puntos}")
+      IO.puts(
+        "#{String.pad_trailing(to_string(idx), 5)}#{String.pad_trailing(to_string(jugador), 11)}#{puntos}"
+      )
     end)
 
     ganadores_str = Enum.join(resultado.ganadores, ", ")

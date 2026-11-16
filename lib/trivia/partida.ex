@@ -1,7 +1,6 @@
 defmodule Trivia.Partida do
   use GenServer
 
-  alias Trivia.Bot
   alias Trivia.Structs.Partida
 
   # INICIO DEL PROCESO
@@ -65,6 +64,8 @@ defmodule Trivia.Partida do
         temporizador: nil
       }
 
+      # Notificar al gestor el PID actual de la partida.
+      # También se ejecutará si el supervisor reinicia este proceso.
       if Process.whereis(Trivia.GestorPartidas) do
         GenServer.cast(
           Trivia.GestorPartidas,
@@ -92,8 +93,16 @@ defmodule Trivia.Partida do
   @doc """
   Agrega un bot a una partida.
   """
-  def agregar_bot(pid, nombre, bot_pid) do
-    GenServer.call(pid, {:agregar_bot, nombre, bot_pid})
+  def agregar_bot(pid, dificultad) do
+    GenServer.call(pid, {:agregar_bot, dificultad})
+  end
+
+  @doc """
+  El jugador abandona la partida (leave_game / disconnect).
+  En curso: se registra el resultado parcial (sección 6.5). En espera: se cancela.
+  """
+  def abandonar(pid) do
+    GenServer.call(pid, :abandonar)
   end
 
   @doc """
@@ -104,43 +113,72 @@ defmodule Trivia.Partida do
   end
 
   @doc """
+  Consulta la siguiente pregunta pendiente de la partida.
+  """
+  def siguiente_pregunta(pid) do
+    GenServer.call(pid, :siguiente_pregunta)
+  end
+
+  @doc """
   Registra la respuesta de un jugador en la ronda actual.
   """
   def responder(pid, jugador, respuesta) do
     GenServer.call(pid, {:responder, jugador, respuesta})
   end
 
-  # CALLBACKS GENSERVER
+  @doc """
+  Cierra la ronda actual y actualiza los puntajes.
+  """
+  def cerrar_ronda(pid) do
+    GenServer.call(pid, :cerrar_ronda)
+  end
+
+  @doc """
+  Consulta los puntajes actuales de la partida.
+  """
+  def consultar_puntajes(pid) do
+    GenServer.call(pid, :consultar_puntajes)
+  end
+
+  # CONSULTAR PARTIDA
 
   def handle_call(:consultar, _desde, estado) do
     {:reply, estado.partida, estado}
   end
 
-  def handle_call(
-        {:agregar_bot, nombre, bot_pid},
-        _desde,
-        estado
-      ) do
+  # CONSULTAR PUNTAJES
+
+  def handle_call(:consultar_puntajes, _desde, estado) do
+    {:reply, estado.partida.puntajes, estado}
+  end
+
+  # AGREGAR BOTS
+
+  def handle_call({:agregar_bot, dificultad}, _desde, estado) do
     jugadores = estado.partida.jugadores
 
     cond do
       estado.partida.estado != :esperando ->
-        {:reply, {:error, "La partida ya fue iniciada"}, estado}
+        {:reply, {:error, "add_bot con la partida ya iniciada"}, estado}
 
       length(jugadores) >= 4 ->
-        {:reply, {:error, "La partida ya tiene el máximo de jugadores"}, estado}
+        {:reply, {:error, "add_bot con la partida llena"}, estado}
 
-      not Bot.es_bot?(nombre) ->
-        {:reply, {:error, "El nombre del bot no es válido"}, estado}
-
-      not is_pid(bot_pid) ->
-        {:reply, {:error, "El PID del bot no es válido"}, estado}
-
-      nombre in jugadores ->
-        {:reply, {:error, "El bot ya está registrado"}, estado}
+      match?({:error, _}, Trivia.Bot.parsear_dificultad(dificultad)) ->
+        {:reply, Trivia.Bot.parsear_dificultad(dificultad), estado}
 
       true ->
-        Process.link(bot_pid)
+        {:ok, dificultad_bot} = Trivia.Bot.parsear_dificultad(dificultad)
+        nombre = Trivia.Bot.nombre(length(jugadores))
+
+        # El bot se crea desde la partida, así que queda enlazado SOLO a ella:
+        # muere con ella y su caída no afecta a ningún otro proceso.
+        {:ok, bot_pid} =
+          Trivia.Bot.start_link(
+            nombre: nombre,
+            dificultad: dificultad_bot,
+            partida_pid: self()
+          )
 
         nueva_partida = %{
           estado.partida
@@ -155,9 +193,45 @@ defmodule Trivia.Partida do
             jugadores_pid: Map.put(estado.jugadores_pid, nombre, bot_pid)
         }
 
-        {:reply, :ok, nuevo_estado}
+        {:reply, {:ok, nombre}, nuevo_estado}
     end
   end
+
+  # ABANDONAR
+
+  def handle_call(:abandonar, _desde, estado) do
+    case estado.partida.estado do
+      :en_curso ->
+        cancelar_temporizador(estado)
+        GenServer.cast(Trivia.GestorPartidas, {:partida_abandonada, estado.partida})
+        {:stop, :normal, :ok, estado}
+
+      _ ->
+        GenServer.cast(Trivia.GestorPartidas, {:partida_cancelada, estado.partida.id})
+        {:stop, :normal, :ok, estado}
+    end
+  end
+
+  # SIGUIENTE PREGUNTA
+
+  def handle_call(:siguiente_pregunta, _desde, estado) do
+    cond do
+      estado.partida.estado != :en_curso ->
+        {:reply, {:error, "La partida no está en curso"}, estado}
+
+      estado.ronda_abierta ->
+        {:reply, {:error, "La ronda actual todavía está abierta"}, estado}
+
+      estado.partida.pregunta_actual > 0 ->
+        {:reply, {:error, "Las preguntas avanzan automáticamente"}, estado}
+
+      true ->
+        {nuevo_estado, pregunta} = abrir_pregunta(estado)
+        {:reply, {:ok, pregunta}, nuevo_estado}
+    end
+  end
+
+  # INICIAR PARTIDA
 
   def handle_call(:iniciar, _desde, estado) do
     jugadores = estado.partida.jugadores
@@ -167,7 +241,7 @@ defmodule Trivia.Partida do
         {:reply, {:error, "La partida ya fue iniciada"}, estado}
 
       length(jugadores) < 3 ->
-        {:reply, {:error, "Se necesitan al menos 3 jugadores"}, estado}
+        {:reply, {:error, "start_game con menos de dos bots en la partida"}, estado}
 
       length(jugadores) > 4 ->
         {:reply, {:error, "La partida no puede tener más de 4 jugadores"}, estado}
@@ -206,6 +280,8 @@ defmodule Trivia.Partida do
     end
   end
 
+  # REGISTRAR RESPUESTAS
+
   def handle_call({:responder, jugador, respuesta}, _desde, estado) do
     cond do
       estado.partida.estado != :en_curso ->
@@ -242,7 +318,7 @@ defmodule Trivia.Partida do
 
           bonificacion =
             if correcta do
-              trunc(5 * tiempo_restante / tiempo_total)
+              calcular_bonificacion(tiempo_restante, tiempo_total)
             else
               0
             end
@@ -272,16 +348,41 @@ defmodule Trivia.Partida do
     end
   end
 
-  # FUNCIONES AUXILIARES Y DE PUNTAJE
+  # CERRAR RONDA Y ACTUALIZAR PUNTAJES
 
-  defp calcular_puntos(:basico, true), do: 10
-  defp calcular_puntos(:basico, false), do: -5
+  def handle_call(:cerrar_ronda, _desde, estado) do
+    cond do
+      estado.partida.estado != :en_curso ->
+        {:reply, {:error, "La partida no está en curso"}, estado}
 
-  defp calcular_puntos(:intermedio, true), do: 15
-  defp calcular_puntos(:intermedio, false), do: -8
+      not estado.ronda_abierta ->
+        {:reply, {:error, "No hay una ronda abierta"}, estado}
 
-  defp calcular_puntos(:avanzado, true), do: 20
-  defp calcular_puntos(:avanzado, false), do: -10
+      true ->
+        if estado.temporizador != nil do
+          Process.cancel_timer(estado.temporizador)
+        end
+
+        {nuevo_estado, resultado} = finalizar_ronda(estado)
+
+        {:reply, {:ok, resultado}, nuevo_estado}
+    end
+  end
+
+  # PUNTAJE SEGUN EL NIVEL DE LA PREGUNTA
+
+  @doc "Puntos base de una respuesta correcta (true) o incorrecta (false) según el nivel."
+  def calcular_puntos(:basico, true), do: 10
+  def calcular_puntos(:basico, false), do: -5
+  def calcular_puntos(:intermedio, true), do: 15
+  def calcular_puntos(:intermedio, false), do: -8
+  def calcular_puntos(:avanzado, true), do: 20
+  def calcular_puntos(:avanzado, false), do: -10
+
+  @doc "Bonificación por rapidez: trunc(5 * restante / total), en el mismo unidad de tiempo."
+  def calcular_bonificacion(restante, total), do: trunc(5 * restante / total)
+
+  # FUNCION AUXILIAR PARA CERRAR UNA RONDA
 
   defp finalizar_ronda(estado) do
     numero = estado.partida.pregunta_actual
@@ -330,7 +431,7 @@ defmodule Trivia.Partida do
     {nuevo_estado, resultado}
   end
 
-  # HANDLE_INFO PARA MENSAJES Y EVENTOS ASÍNCRONOS
+  # CIERRE CUANDO TODOS RESPONDEN
 
   def handle_info({:todos_respondieron, numero}, estado) do
     if estado.ronda_abierta and
@@ -356,6 +457,8 @@ defmodule Trivia.Partida do
     end
   end
 
+  # AVANCE AUTOMATICO DE PREGUNTAS
+
   def handle_info({:avanzar_pregunta, numero}, estado) do
     if estado.partida.estado == :en_curso and
          not estado.ronda_abierta and
@@ -368,6 +471,8 @@ defmodule Trivia.Partida do
       {:noreply, estado}
     end
   end
+
+  # CIERRE AUTOMATICO POR TIEMPO
 
   def handle_info({:tiempo_agotado, numero}, estado) do
     if estado.ronda_abierta and
@@ -384,6 +489,8 @@ defmodule Trivia.Partida do
       {:noreply, estado}
     end
   end
+
+  # FINALIZAR PARTIDA
 
   def handle_info(:finalizar_partida, estado) do
     if estado.partida.estado == :en_curso and
@@ -423,6 +530,8 @@ defmodule Trivia.Partida do
         send(pid, {:partida_finalizada, resultado})
       end)
 
+      # Informar al gestor que la partida terminó.
+      # El gestor coordinará la persistencia y liberará al jugador.
       GenServer.cast(
         Trivia.GestorPartidas,
         {:partida_terminada, partida_finalizada, resultado}
@@ -434,6 +543,7 @@ defmodule Trivia.Partida do
     end
   end
 
+  # CONTROL DE PROCESOS DE LOS BOTS
   def handle_info({:EXIT, pid, _razon}, estado) do
     nombre_bot =
       Enum.find_value(estado.bots_pid, fn {nombre, bot_pid} ->
@@ -463,6 +573,7 @@ defmodule Trivia.Partida do
     end
   end
 
+  # DETECTAR DESCONEXION DEL CLIENTE
   def handle_info(
         {:DOWN, referencia, :process, pid, _razon},
         estado
@@ -480,22 +591,22 @@ defmodule Trivia.Partida do
     end
   end
 
+  # FINALIZAR PARTIDA POR DESCONEXION
   def handle_info({:cliente_desconectado, id}, estado) do
     if id == estado.partida.id do
       case estado.partida.estado do
         :esperando ->
-          GenServer.cast(
-            Trivia.GestorPartidas,
-            {:partida_cancelada, estado.partida.id}
-          )
-
+          # Si no había comenzado, cancelar sin guardar resultados.
+          GenServer.cast(Trivia.GestorPartidas, {:partida_cancelada, estado.partida.id})
           {:stop, :normal, estado}
 
         :en_curso ->
+          # Detener el temporizador de la pregunta.
           if estado.temporizador != nil do
             Process.cancel_timer(estado.temporizador)
           end
 
+          # Avisar al gestor para que coordine el guardado.
           GenServer.cast(
             Trivia.GestorPartidas,
             {:partida_abandonada, estado.partida}
@@ -511,9 +622,16 @@ defmodule Trivia.Partida do
     end
   end
 
-  def handle_info(_mensaje, estado), do: {:noreply, estado}
+  # Al terminar la partida (por la razón que sea) mueren sus bots.
+  def terminate(_razon, estado) do
+    Enum.each(estado.bots_pid, fn {_nombre, pid} -> Process.exit(pid, :shutdown) end)
+    :ok
+  end
 
-  # FUNCIONES INTERNAS DE GESTIÓN DE PREGUNTAS
+  defp cancelar_temporizador(%{temporizador: nil}), do: :ok
+  defp cancelar_temporizador(%{temporizador: ref}), do: Process.cancel_timer(ref)
+
+  # PROGRAMAR SIGUIENTE PREGUNTA
 
   defp programar_siguiente_pregunta(estado) do
     if estado.partida.pregunta_actual <
@@ -529,6 +647,8 @@ defmodule Trivia.Partida do
 
     estado
   end
+
+  # ABRIR PREGUNTA Y NOTIFICAR A LOS JUGADORES
 
   defp abrir_pregunta(estado) do
     numero = estado.partida.pregunta_actual + 1
@@ -564,7 +684,7 @@ defmodule Trivia.Partida do
     }
 
     Enum.each(estado.jugadores_pid, fn {jugador, pid} ->
-      if Bot.es_bot?(jugador) do
+      if String.starts_with?(jugador, "bot_") do
         send(pid, {:pregunta_bot, estado.partida.id, pregunta_publica, pregunta.respuesta})
       else
         send(pid, {:nueva_pregunta, estado.partida.id, pregunta_publica})

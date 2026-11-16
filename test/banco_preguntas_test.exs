@@ -21,6 +21,9 @@ defmodule Trivia.BancoPreguntasTest do
   end
 
   test "validar disponibilidad rechaza un tema que no existe en el banco" do
+    # El banco (Agent) no se levanta solo en el nodo de pruebas: se carga desde data/questions.json
+    start_supervised!(BancoPreguntas)
+
     assert {:error, mensaje} =
              BancoPreguntas.validar_disponibilidad_tema("tema_inexistente_xyz",
                basico: 1,
