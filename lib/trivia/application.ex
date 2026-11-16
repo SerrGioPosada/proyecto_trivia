@@ -1,10 +1,10 @@
-
 defmodule Trivia.Application do
   use Application
 
   def start(_tipo, _argumentos) do
     hijos = [
       Trivia.BancoPreguntas,
+      Trivia.GestorJugadores,
       Trivia.GestorPartidas,
       Trivia.SupervisorPartidas,
       Trivia.Servidor

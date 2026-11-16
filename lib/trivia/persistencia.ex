@@ -34,7 +34,11 @@ defmodule Trivia.Persistencia do
     inicializar_almacenamiento()
 
     with {:ok, usuarios} <- leer_usuarios() do
-      nuevo_registro = %{"usuario" => usuario, "clave" => clave}
+      nuevo_registro = %{
+        "usuario" => to_string(usuario),
+        "clave" => to_string(clave)
+      }
+
       nueva_lista = [nuevo_registro | usuarios]
 
       case Jason.encode(nueva_lista, pretty: true) do
@@ -42,8 +46,8 @@ defmodule Trivia.Persistencia do
           File.write!(@users_file, json_data)
           :ok
 
-        {:error, _} ->
-          {:error, "Error al codificar el usuario para JSON"}
+        {:error, razon} ->
+          {:error, "Error al codificar el usuario para JSON: #{inspect(razon)}"}
       end
     end
   end
@@ -85,7 +89,7 @@ defmodule Trivia.Persistencia do
     if File.exists?(@results_file) do
       File.stream!(@results_file)
       |> Stream.map(&String.trim/1)
-      |> Stream.reject(&(&1 == ""))
+      |> Stream.reject(&(&1 == "" or String.starts_with?(&1, "#")))
     else
       []
     end
