@@ -1,20 +1,28 @@
-
 defmodule Trivia.Application do
   use Application
 
   def start(_tipo, _argumentos) do
-    hijos = [
-      Trivia.BancoPreguntas,
-      Trivia.GestorPartidas,
-      Trivia.SupervisorPartidas,
-      Trivia.Servidor
-    ]
+    hijos =
+      if servidor?() do
+        [
+          Trivia.BancoPreguntas,
+          Trivia.GestorJugadores,
+          Trivia.GestorPartidas,
+          Trivia.SupervisorPartidas,
+          Trivia.Servidor
+        ]
+      else
+        []
+      end
 
-    opciones = [
-      strategy: :one_for_one,
-      name: Trivia.Supervisor
-    ]
+    Supervisor.start_link(hijos, strategy: :one_for_one, name: Trivia.Supervisor)
+  end
 
-    Supervisor.start_link(hijos, opciones)
+  def servidor? do
+    case System.get_env("TRIVIA_ROL") do
+      "servidor" -> true
+      "cliente" -> false
+      _ -> Node.self() |> Atom.to_string() |> String.starts_with?("servidor")
+    end
   end
 end

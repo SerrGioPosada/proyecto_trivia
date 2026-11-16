@@ -4,7 +4,8 @@ defmodule Trivia.BancoPreguntas do
   alias Trivia.Structs.Pregunta
 
   @doc """
-
+  Inicia el Agent con el banco de preguntas cargado desde questions.json.
+  Si el archivo no existe o es inválido, el arranque de la aplicación falla.
   """
   def start_link(_opciones) do
     case cargar_banco() do
@@ -13,7 +14,7 @@ defmodule Trivia.BancoPreguntas do
     end
   end
 
-  def obtener, do: Agent.get(__MODULE__, & &1)
+  defp obtener, do: Agent.get(__MODULE__, & &1)
 
   @doc """
   Carga todas las preguntas del archivo JSON y las convierte en structs de Pregunta.
@@ -24,7 +25,7 @@ defmodule Trivia.BancoPreguntas do
         preguntas =
           Enum.map(lista_mapas, fn m ->
             %Pregunta{
-              tema: m["tema"],
+              tema: normalizar_tema(m["tema"]),
               nivel: String.to_atom(m["nivel"]),
               enunciado: m["enunciado"],
               opciones: m["opciones"],
@@ -93,7 +94,13 @@ defmodule Trivia.BancoPreguntas do
     {:ok, preguntas_sorteadas}
   end
 
-  # FUNCIONES AUXILIARES DE REPARTO
+  # FUNCIONES AUXILIARES
+
+  # GestorPartidas normaliza el tema a minúsculas; el banco debe hacer lo mismo
+  defp normalizar_tema(tema) when is_binary(tema), do: tema |> String.trim() |> String.downcase()
+  defp normalizar_tema(tema), do: tema
+
+  # REPARTO POR NIVEL
 
   def calcular_reparto(:basico, total) do
     n_inter = trunc(total * 30 / 100)

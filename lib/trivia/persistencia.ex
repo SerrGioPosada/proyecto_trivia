@@ -34,7 +34,12 @@ defmodule Trivia.Persistencia do
     inicializar_almacenamiento()
 
     with {:ok, usuarios} <- leer_usuarios() do
-      nuevo_registro = %{"usuario" => usuario, "clave" => clave}
+      # Convertimos explícitamente a string para garantizar que no se intenten guardar tipos inválidos
+      nuevo_registro = %{
+        "usuario" => to_string(usuario),
+        "clave" => to_string(clave)
+      }
+
       nueva_lista = [nuevo_registro | usuarios]
 
       case Jason.encode(nueva_lista, pretty: true) do
@@ -42,8 +47,8 @@ defmodule Trivia.Persistencia do
           File.write!(@users_file, json_data)
           :ok
 
-        {:error, _} ->
-          {:error, "Error al codificar el usuario para JSON"}
+        {:error, razon} ->
+          {:error, "Error al codificar el usuario para JSON: #{inspect(razon)}"}
       end
     end
   end
