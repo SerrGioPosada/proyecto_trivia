@@ -17,31 +17,23 @@ defmodule Trivia.Cliente do
 
   defp bucle_comandos(estado) do
     IO.write("\nComando > ")
-    entrada = IO.gets("") |> String.trim()
-    partes = String.split(entrada, " ")
+
+    entrada =
+      case IO.gets("") do
+        texto when is_binary(texto) ->
+          String.trim(texto)
+
+        _fin_de_entrada ->
+          IO.puts("Saliendo del cliente...")
+          exit(:normal)
+      end
+
+    partes = String.split(entrada)
 
     nuevo_estado =
       case partes do
         ["connect", usuario, clave] ->
-          case Node.ping(elem(estado.servidor, 1)) do
-            :pong ->
-              case GenServer.call(
-                     estado.servidor,
-                     {:connect, usuario, clave, estado.receptor_pid}
-                   ) do
-                {:ok, msg} ->
-                  IO.puts(msg)
-                  %{estado | usuario: usuario}
-
-                {:error, raz} ->
-                  IO.puts("Error: #{raz}")
-                  estado
-              end
-
-            :pang ->
-              IO.puts("Error: Servidor no disponible cuando el cliente intenta conectarse.")
-              estado
-          end
+          manejar_connect(usuario, clave, estado)
 
         ["create_game" | args] ->
           manejar_create_game(args, estado)
@@ -79,31 +71,60 @@ defmodule Trivia.Cliente do
     bucle_comandos(nuevo_estado)
   end
 
+  defp manejar_connect(usuario, clave, estado) do
+    # El servidor guarda los usuarios en minúsculas; el cliente debe usar
+    # exactamente el mismo nombre para crear partidas, responder y consultar.
+    usuario = String.downcase(usuario)
+
+    case Node.ping(elem(estado.servidor, 1)) do
+      :pong ->
+        case GenServer.call(estado.servidor, {:connect, usuario, clave, estado.receptor_pid}) do
+          {:ok, msg} ->
+            IO.puts(msg)
+            %{estado | usuario: usuario}
+
+          {:error, razon} ->
+            IO.puts("Error: #{texto_error(razon)}")
+            estado
+        end
+
+      :pang ->
+        IO.puts("Error: Servidor no disponible cuando el cliente intenta conectarse.")
+        estado
+    end
+  end
+
   defp manejar_create_game(args, estado) do
     if is_nil(estado.usuario) do
       IO.puts("Error: Comando ejecutado sin haber iniciado sesión.")
       estado
     else
       parsed = parse_args(args)
-      tema = Map.get(parsed, "tema")
-      preguntas = String.to_integer(Map.get(parsed, "preguntas", "5"))
-      tiempo = String.to_integer(Map.get(parsed, "tiempo", "15"))
 
-      case GenServer.call(
-             estado.servidor,
-             {:crear_partida, estado.usuario, tema, preguntas, tiempo, estado.receptor_pid}
-           ) do
-        {:ok, id, nivel} ->
-          IO.puts(
-            "Partida creada exitosamente. ID: #{id} | Nivel del creador en #{tema}: #{nivel}"
-          )
-
-          %{estado | partida_id: id}
-
+      with {:ok, tema} <- obtener_tema(parsed),
+           {:ok, preguntas} <- obtener_entero(parsed, "preguntas", 5),
+           {:ok, tiempo} <- obtener_entero(parsed, "tiempo", 15) do
+        crear_partida(estado, tema, preguntas, tiempo)
+      else
         {:error, razon} ->
           IO.puts("Error al crear partida: #{razon}")
           estado
       end
+    end
+  end
+
+  defp crear_partida(estado, tema, preguntas, tiempo) do
+    peticion = {:crear_partida, estado.usuario, tema, preguntas, tiempo, estado.receptor_pid}
+
+    case GenServer.call(estado.servidor, peticion) do
+      {:ok, id, nivel} ->
+        IO.puts("Partida creada exitosamente. ID: #{id} | Nivel del creador en #{tema}: #{nivel}")
+
+        %{estado | partida_id: id}
+
+      {:error, razon} ->
+        IO.puts("Error al crear partida: #{texto_error(razon)}")
+        estado
     end
   end
 
@@ -118,7 +139,7 @@ defmodule Trivia.Cliente do
           estado
 
         {:error, razon} ->
-          IO.puts("Error: #{razon}")
+          IO.puts("Error: #{texto_error(razon)}")
           estado
       end
     end
@@ -135,7 +156,7 @@ defmodule Trivia.Cliente do
           estado
 
         {:error, razon} ->
-          IO.puts("Error al iniciar: #{razon}")
+          IO.puts("Error al iniciar: #{texto_error(razon)}")
           estado
       end
     end
@@ -152,7 +173,7 @@ defmodule Trivia.Cliente do
           estado
 
         {:error, razon} ->
-          IO.puts("Error: #{razon}")
+          IO.puts("Error: #{texto_error(razon)}")
           estado
       end
     end
@@ -177,7 +198,7 @@ defmodule Trivia.Cliente do
           estado
 
         {:error, razon} ->
-          IO.puts("Error: #{razon}")
+          IO.puts("Error: #{texto_error(razon)}")
           estado
       end
     end
@@ -203,15 +224,22 @@ defmodule Trivia.Cliente do
         estado
 
       {:error, razon} ->
-        IO.puts("Error: #{razon}")
+        IO.puts("Error: #{texto_error(razon)}")
         estado
     end
   end
 
   defp manejar_leave_game(estado) do
     if estado.partida_id do
-      GenServer.call(estado.servidor, {:leave_game, estado.partida_id, estado.usuario})
-      IO.puts("Has abandonado la partida.")
+      case GenServer.call(estado.servidor, {:leave_game, estado.partida_id, estado.usuario}) do
+        :ok ->
+          IO.puts("Has abandonado la partida.")
+
+        {:error, razon} ->
+          # La partida ya no existe en el servidor: se limpia igualmente el estado local
+          IO.puts("Error: #{texto_error(razon)}")
+      end
+
       %{estado | partida_id: nil}
     else
       IO.puts("No estás en ninguna partida.")
@@ -221,6 +249,9 @@ defmodule Trivia.Cliente do
 
   defp manejar_disconnect(estado) do
     if estado.usuario do
+      # Si el jugador sigue en una partida, primero la abandona
+      estado = if estado.partida_id, do: manejar_leave_game(estado), else: estado
+
       GenServer.call(estado.servidor, {:disconnect, estado.usuario})
       IO.puts("Sesión cerrada.")
       %{estado | usuario: nil, partida_id: nil}
@@ -230,6 +261,8 @@ defmodule Trivia.Cliente do
     end
   end
 
+  # PARSEO Y VALIDACIÓN DE ARGUMENTOS
+
   defp parse_args(args) do
     Enum.reduce(args, %{}, fn arg, acc ->
       case String.split(arg, "=", parts: 2) do
@@ -238,4 +271,30 @@ defmodule Trivia.Cliente do
       end
     end)
   end
+
+  defp obtener_tema(parsed) do
+    case Map.get(parsed, "tema") do
+      tema when is_binary(tema) and tema != "" ->
+        {:ok, tema}
+
+      _ ->
+        {:error, "Debes indicar el tema: create_game tema=<tema> preguntas=<n> tiempo=<s>"}
+    end
+  end
+
+  defp obtener_entero(parsed, clave, por_defecto) do
+    case Map.fetch(parsed, clave) do
+      :error ->
+        {:ok, por_defecto}
+
+      {:ok, valor} ->
+        case Integer.parse(valor) do
+          {numero, ""} when numero > 0 -> {:ok, numero}
+          _ -> {:error, "El valor de '#{clave}' debe ser un entero positivo"}
+        end
+    end
+  end
+
+  defp texto_error(razon) when is_binary(razon), do: razon
+  defp texto_error(razon), do: inspect(razon)
 end

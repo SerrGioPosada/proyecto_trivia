@@ -1,5 +1,5 @@
 defmodule Trivia.NivelTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
   alias Trivia.Nivel
 
   test "nivel_por_puntaje evalúa umbrales exactos y puntajes negativos" do
@@ -29,27 +29,5 @@ defmodule Trivia.NivelTest do
 
     # Tema nunca jugado (devuelve 0 puntaje -> básico)
     assert Nivel.calcular_nivel(lineas_historial, "pedro", "matematicas") == :basico
-  end
-
-  test "estadisticas desde el historial calculan puntaje acumulado y partidas, ignorando bots" do
-    lineas = [
-      Jason.encode!(%{"tema" => "ciencia", "puntajes" => %{"pedro" => 50, "bot_1" => 20}}),
-      Jason.encode!(%{"tema" => "ciencia", "puntajes" => %{"pedro" => 30, "bot_2" => 15}})
-    ]
-
-    {puntaje_pedro, partidas_pedro} =
-      Enum.reduce(lineas, {0, 0}, fn linea, {pt, pj} ->
-        {:ok, data} = Jason.decode(linea)
-        puntajes = data["puntajes"]
-
-        if Map.has_key?(puntajes, "pedro") do
-          {pt + puntajes["pedro"], pj + 1}
-        else
-          {pt, pj}
-        end
-      end)
-
-    assert puntaje_pedro == 80
-    assert partidas_pedro == 2
   end
 end

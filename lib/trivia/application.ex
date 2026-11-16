@@ -3,15 +3,15 @@ defmodule Trivia.Application do
 
   def start(_tipo, _argumentos) do
     hijos = [
-      Trivia.BancoPreguntas,
       Trivia.GestorJugadores,
+      Trivia.BancoPreguntas,
       Trivia.GestorPartidas,
       Trivia.SupervisorPartidas,
       Trivia.Servidor
     ]
 
     opciones = [
-      strategy: :one_for_one,
+      strategy: :rest_for_one,
       name: Trivia.Supervisor
     ]
 
